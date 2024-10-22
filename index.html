@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #chat { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 10px; }
+        .message { margin-bottom: 10px; padding: 5px; border-radius: 5px; max-width: 60%; }
+        .sender { background-color: #d1e7dd; align-self: flex-start; text-align: left; }
+        .receiver { background-color: #f8d7da; align-self: flex-end; text-align: right; }
+        .message-container { display: flex; flex-direction: column; }
+        input, button { padding: 10px; font-size: 16px; }
+        img, video { max-width: 200px; height: auto; border-radius: 5px; }
+        a { display: block; }
+        #attachmentMenu { display: none; position: absolute; background-color: white; border: 1px solid #ccc; padding: 10px; border-radius: 5px; }
+        .attachment-option { cursor: pointer; padding: 5px; }
+        .attachment-option:hover { background-color: #f0f0f0; }
+        #attachmentButton { border: none; background: none; font-size: 24px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<h1>Chat App</h1>
+<div id="chat" class="message-container"></div>
+<input type="text" id="messageInput" placeholder="Type your message here...">
+<button onclick="sendMessage()">Send</button>
+<br><br>
+<button id="attachmentButton">📎</button>
+<div id="attachmentMenu">
+    <div class="attachment-option" onclick="document.getElementById('imageInput').click()">Send Image</div>
+    <div class="attachment-option" onclick="document.getElementById('videoInput').click()">Send Video</div>
+    <div class="attachment-option" onclick="document.getElementById('fileInput').click()">Send File</div>
+</div>
+
+<input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="sendImage()">
+<input type="file" id="videoInput" accept="video/*" style="display: none;" onchange="sendVideo()">
+<input type="file" id="fileInput" style="display: none;" onchange="sendFile()">
+
+<script>
+    // Establish a WebSocket connection to the server
+    const socket = new WebSocket('ws://192.168.74.42:3000');
+    let clientId = Math.random().toString(36).substring(2, 15);
+
+    // Show or hide the attachment menu
+    document.getElementById('attachmentButton').onclick = function () {
+        const menu = document.getElementById('attachmentMenu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    };
+
+    // Hide the attachment menu when clicking outside
+    document.addEventListener('click', function (event) {
+        const menu = document.getElementById('attachmentMenu');
+        if (!menu.contains(event.target) && event.target.id !== 'attachmentButton') {
+            menu.style.display = 'none';
+        }
+    });
+
+    // Handle incoming messages from the server
+    socket.onmessage = function (event) {
+        if (typeof event.data === 'object' && event.data instanceof Blob) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                const data = JSON.parse(reader.result);
+                if (data.type === 'text') {
+                    displayMessage(data);
+                } else if (data.type === 'image') {
+                    displayImage(data);
+                } else if (data.type === 'video') {
+                    displayVideo(data);
+                } else if (data.type === 'file') {
+                    displayFile(data);
+                }
+            };
+            reader.readAsText(event.data);
+        }
+    };
+
+    // Function to display a text message in the chat
+    function displayMessage(messageData) {
+        const chatDiv = document.getElementById('chat');
+        const newMessage = document.createElement('div');
+        newMessage.textContent = messageData.text;
+        newMessage.classList.add('message', messageData.clientId === clientId ? 'sender' : 'receiver');
+        chatDiv.appendChild(newMessage);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Function to display an image in the chat
+    function displayImage(imageData) {
+        const chatDiv = document.getElementById('chat');
+        const newMessage = document.createElement('div');
+        const img = document.createElement('img');
+        img.src = imageData.dataUrl;
+        newMessage.appendChild(img);
+        newMessage.classList.add('message', imageData.clientId === clientId ? 'sender' : 'receiver');
+        chatDiv.appendChild(newMessage);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Function to display a video in the chat
+    function displayVideo(videoData) {
+        const chatDiv = document.getElementById('chat');
+        const newMessage = document.createElement('div');
+        const video = document.createElement('video');
+        video.src = videoData.dataUrl;
+        video.controls = true;
+        newMessage.appendChild(video);
+        newMessage.classList.add('message', videoData.clientId === clientId ? 'sender' : 'receiver');
+        chatDiv.appendChild(newMessage);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Function to display a file in the chat
+    function displayFile(fileData) {
+        const chatDiv = document.getElementById('chat');
+        const newMessage = document.createElement('div');
+        const fileLink = document.createElement('a');
+        fileLink.href = fileData.dataUrl;
+        fileLink.textContent = fileData.fileName;
+        fileLink.download = fileData.fileName;
+        newMessage.appendChild(fileLink);
+        newMessage.classList.add('message', fileData.clientId === clientId ? 'sender' : 'receiver');
+        chatDiv.appendChild(newMessage);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // Function to send a text message to the server
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        if (input.value && socket.readyState === WebSocket.OPEN) {
+            const message = {
+                type: 'text',
+                text: input.value,
+                clientId: clientId
+            };
+            socket.send(JSON.stringify(message));
+            input.value = '';
+        }
+    }
+
+    // Function to send an image to the server
+    function sendImage() {
+        const imageInput = document.getElementById('imageInput');
+        const file = imageInput.files[0];
+        if (!file) {
+            alert("Please select an image before sending.");
+            return;
+        }
+        if (socket.readyState === WebSocket.OPEN) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                const message = { type: 'image', dataUrl: reader.result, clientId: clientId };
+                socket.send(JSON.stringify(message));
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // Function to send a video to the server
+    function sendVideo() {
+        const videoInput = document.getElementById('videoInput');
+        const file = videoInput.files[0];
+        if (!file) {
+            alert("Please select a video before sending.");
+            return;
+        }
+        if (socket.readyState === WebSocket.OPEN) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                const message = { type: 'video', dataUrl: reader.result, clientId: clientId };
+                socket.send(JSON.stringify(message));
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // Function to send a file to the server
+    function sendFile() {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+        if (!file) {
+            alert("Please select a file before sending.");
+            return;
+        }
+        if (socket.readyState === WebSocket.OPEN) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                const message = { type: 'file', dataUrl: reader.result, fileName: file.name, clientId: clientId };
+                socket.send(JSON.stringify(message));
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // Log when the WebSocket is connected
+    socket.onopen = function () {
+        console.log("Connected to the WebSocket server");
+    };
+
+    // Log when the WebSocket is closed
+    socket.onclose = function () {
+        console.log("Disconnected from the WebSocket server");
+    };
+
+    // Handle WebSocket errors
+    socket.onerror = function (error) {
+        console.error("WebSocket error:", error);
+    };
+</script>
+
+</body>
+</html>
